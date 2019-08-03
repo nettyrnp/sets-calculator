@@ -29,8 +29,14 @@ func main() {
 	util.Die(err)
 	fmt.Printf(">> files: %v\n", files)
 
-	task1 := `[ SUM [ DIF a.txt b.txt c.txt ] [ INT b.txt c.txt ] ]`
+	task1 := expression{
+		raw: `[ SUM a.txt b.txt c.txt ]`,
+	}
 	fmt.Printf(">> task: %v\n", task1)
+	task2 := expression{
+		raw: `[ SUM [ DIF a.txt b.txt c.txt ] [ INT b.txt c.txt ] ]`,
+	}
+	fmt.Printf(">> task: %v\n", task2)
 }
 
 func getFiles() ([]file, error) {
@@ -76,6 +82,35 @@ func parseLines(body string) ([]int, error) {
 
 type setKind int
 
+//type task struct {
+//	raw      string
+//	operator string
+//	sets []set
+//	output   string
+//}
+//
+//func (t *task) parse() {
+//	//parts:=[]string{}
+//	// ...
+//	// parsing ...
+//	// ...
+//	parts:=strings.Split(t.raw, " ")
+//	t.operator=parts[0]
+//	for _, part :=range parts[1:]{
+//		t.sets=append(t.sets, set{
+//			kind:       setKindExpr,
+//			expression: expression{
+//				raw: part,
+//			},
+//		})
+//	}
+//}
+//
+//
+//func (t *task) do() {
+//	t.output=""
+//}
+
 type set struct {
 	kind       setKind
 	file       []int
@@ -90,25 +125,25 @@ type file struct {
 type expression struct {
 	raw      string
 	operator string
-	operands []set
+	sets     []set
 	output   []int
 }
 
 func (e *expression) evaluate() {
 	switch e.operator {
 	case operatorKindSum:
-		e.output = calcSum(e.operands)
+		e.calcSum()
 	}
 }
 
-func calcSum(operands []set) []int {
-	out := []int{}
-	for _, set := range operands {
+func (e *expression) calcSum() {
+	arr := []int{}
+	for _, set := range e.sets {
 		if set.kind == setKindFile {
-
+			arr = append(arr, set.file...)
 		} else if set.kind == setKindExpr {
-
+			set.expression.evaluate()
 		}
 	}
-	return out
+	e.output = arr
 }
