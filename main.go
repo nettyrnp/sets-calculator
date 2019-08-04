@@ -41,7 +41,8 @@ func main() {
 
 	task1 := expression{
 		//raw: `[ SUM a.txt b.txt c.txt ]`,
-		raw: `[ SUM a.txt  [ SUM a.txt b.txt ] b.txt ]`,
+		//raw: `[ SUM a.txt  [ SUM a.txt b.txt ] b.txt ]`,
+		raw: `[ SUM c.txt  [ INT a.txt b.txt c.txt ] ]`,
 		//	//raw: `[ SUM [ DIF a.txt b.txt c.txt ] [ INT b.txt c.txt ] ]`,
 		//	raw: `[ SUM [ DIF a.txt b.txt c.txt ] a.txt b.txt [ INT b.txt c.txt ] c.txt ]`,
 		//	//raw: `[ SUM [ DIF a.txt [ INT b.txt c.txt ] b.txt ] c.txt ]`,
@@ -123,6 +124,10 @@ func (e *expression) evaluate() {
 	switch e.operator {
 	case operatorKindSum:
 		e.calcSum()
+	case operatorKindInt:
+		e.calcIntersection()
+	case operatorKindDif:
+		e.calcDiff()
 	}
 }
 
@@ -149,6 +154,59 @@ func (e *expression) calcSum() {
 }
 
 func (e *expression) calcIntersection() {
+	// evaluate all sets
+	var resultSet []int // store the first set to compare the others against it
+	m := map[int]struct{}{}
+	for _, set := range e.sets {
+		if set.kind == setKindFile {
+			if resultSet == nil {
+				resultSet = set.file
+			}
+		} else if set.kind == setKindExpr {
+			set.expression.evaluate()
+			if resultSet == nil {
+				resultSet = set.expression.output
+			}
+		}
+	}
+	// calculate intersection pair-wise
+	for i, set := range e.sets {
+		if i > 1 {
+			if set.kind == setKindFile {
+				resultSet = calcIntersection0(resultSet, set.file)
+			} else if set.kind == setKindExpr {
+				set.expression.evaluate()
+				resultSet = calcIntersection0(resultSet, set.expression.output)
+			}
+		}
+	}
+
+	for k, _ := range m {
+		resultSet = append(resultSet, k)
+	}
+	sort.Ints(resultSet)
+	e.output = resultSet
+}
+
+func calcIntersection0(set1 []int, set2 []int) []int {
+	arr := []int{}
+	m := map[int]struct{}{}
+	resMap := map[int]struct{}{}
+	for _, k := range set1 {
+		m[k] = struct{}{}
+	}
+	for _, k := range set2 {
+		if _, ok := m[k]; ok {
+			resMap[k] = struct{}{}
+		}
+	}
+	for k, _ := range resMap {
+		arr = append(arr, k)
+	}
+	return arr
+}
+
+func (e *expression) calcDiff() {
 	arr := []int{}
 	m := map[int]struct{}{}
 	for _, set := range e.sets {
@@ -169,15 +227,6 @@ func (e *expression) calcIntersection() {
 	sort.Ints(arr)
 	e.output = arr
 }
-
-//func sum(sets ...int) []int {
-//	arr := []int{}
-//	m:=map[int]struct{}{}
-//	for _,st:=range sets{
-//		m[]
-//	}
-//	return arr
-//}
 
 func (e *expression) parse() {
 	// parse the operator
