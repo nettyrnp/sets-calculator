@@ -66,7 +66,6 @@ func getFiles() ([]file, error) {
 	files := []file{}
 	rootDir, _ := os.Getwd()
 	filesDir := filepath.Join(rootDir, "files")
-	//fmt.Printf(">> filesDir: %v\n", filesDir)
 
 	fileInfo, err := ioutil.ReadDir(filesDir)
 	if err != nil {
@@ -127,7 +126,10 @@ type expression struct {
 }
 
 func (e *expression) evaluate() {
-	if !e.isEvaluated {
+	if e.isEvaluated {
+		return
+	}
+	if e.operator == "" && e.sets == nil {
 		e.parse()
 	}
 	switch e.operator {
@@ -138,6 +140,7 @@ func (e *expression) evaluate() {
 	case operatorKindDif:
 		e.calcDiff()
 	}
+	e.isEvaluated = true
 }
 
 func (e *expression) calcSum() {
