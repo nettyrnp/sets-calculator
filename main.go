@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -25,8 +26,9 @@ const (
 )
 
 var (
-	logger = log.GetLogger()
-	re     = regexp.MustCompile(fmt.Sprintf(`\[ *((%v|%v|%v) +(.+)) *\]`, operatorKindSum, operatorKindInt, operatorKindDif))
+	logger   = log.GetLogger()
+	re       = regexp.MustCompile(fmt.Sprintf(`\[ *((%v|%v|%v) +(.+)) *\]`, operatorKindSum, operatorKindInt, operatorKindDif))
+	filesMap = map[string]file{}
 )
 
 // set = file | expression
@@ -38,19 +40,17 @@ func main() {
 	fmt.Printf(">> files: %v\n", files)
 
 	task1 := expression{
-		raw: `[ SUM a.txt b.txt c.txt ]`,
+		//raw: `[ SUM a.txt b.txt c.txt ]`,
+		raw: `[ SUM a.txt  [ SUM a.txt b.txt ] b.txt ]`,
+		//	//raw: `[ SUM [ DIF a.txt b.txt c.txt ] [ INT b.txt c.txt ] ]`,
+		//	raw: `[ SUM [ DIF a.txt b.txt c.txt ] a.txt b.txt [ INT b.txt c.txt ] c.txt ]`,
+		//	//raw: `[ SUM [ DIF a.txt [ INT b.txt c.txt ] b.txt ] c.txt ]`,
+		//	//raw: `[ SUM [ DIF a.txt b.txt ] c.txt ]`,
+		//	//raw: `[ SUM c.txt [ DIF a.txt b.txt ] ]`,
 	}
 	task1.evaluate()
 	fmt.Printf(">> task: %v\n\n", task1)
-
-	task2 := expression{
-		//raw: `[ SUM [ DIF a.txt b.txt c.txt ] [ INT b.txt c.txt ] ]`,
-		raw: `[ SUM [ DIF a.txt b.txt c.txt ] a.txt b.txt [ INT b.txt c.txt ] c.txt ]`,
-		//raw: `[ SUM [ DIF a.txt b.txt ] c.txt ]`,
-		//raw: `[ SUM c.txt [ DIF a.txt b.txt ] ]`,
-	}
-	task2.evaluate()
-	fmt.Printf(">> task: %v\n\n", task2)
+	fmt.Printf(">> task.output: %v\n\n", task1.output)
 }
 
 func getFiles() ([]file, error) {
@@ -73,7 +73,9 @@ func getFiles() ([]file, error) {
 			return files, err
 		}
 		arr, err := parseLines(body)
-		files = append(files, file{f.Name(), arr})
+		newFile := file{f.Name(), arr}
+		files = append(files, newFile)
+		filesMap[f.Name()] = newFile
 	}
 	return files, nil
 }
@@ -115,7 +117,7 @@ type expression struct {
 }
 
 func (e *expression) evaluate() {
-	if e.operator == "" {
+	if e.operator == "" && e.sets == nil {
 		e.parse()
 	}
 	switch e.operator {
@@ -126,17 +128,59 @@ func (e *expression) evaluate() {
 
 func (e *expression) calcSum() {
 	arr := []int{}
+	m := map[int]struct{}{}
 	for _, set := range e.sets {
 		if set.kind == setKindFile {
-			arr = append(arr, set.file...)
+			for _, i := range set.file {
+				m[i] = struct{}{}
+			}
 		} else if set.kind == setKindExpr {
 			set.expression.evaluate()
+			for _, i := range set.expression.output {
+				m[i] = struct{}{}
+			}
 		}
 	}
+	for k, _ := range m {
+		arr = append(arr, k)
+	}
+	sort.Ints(arr)
 	e.output = arr
 }
 
+func (e *expression) calcIntersection() {
+	arr := []int{}
+	m := map[int]struct{}{}
+	for _, set := range e.sets {
+		if set.kind == setKindFile {
+			for _, i := range set.file {
+				m[i] = struct{}{}
+			}
+		} else if set.kind == setKindExpr {
+			set.expression.evaluate()
+			for _, i := range set.expression.output {
+				m[i] = struct{}{}
+			}
+		}
+	}
+	for k, _ := range m {
+		arr = append(arr, k)
+	}
+	sort.Ints(arr)
+	e.output = arr
+}
+
+//func sum(sets ...int) []int {
+//	arr := []int{}
+//	m:=map[int]struct{}{}
+//	for _,st:=range sets{
+//		m[]
+//	}
+//	return arr
+//}
+
 func (e *expression) parse() {
+	// parse the operator
 	raw := e.raw
 	if !re.MatchString(raw) {
 		logger.Fatalf("%v is not a valid expression", raw)
@@ -147,11 +191,12 @@ func (e *expression) parse() {
 	fmt.Printf("tail: '%v'\n", tail)
 	e.operator = head
 
-	// proceed
+	// parse the tail
 	cur, prev := 0, 0
 	left, right := "[", "]"
 	buf := bytes.Buffer{}
-	arr := []string{}
+	//arr := []string{}
+	arr2 := []set{}
 	for i := 0; i < len(tail); i++ {
 		s := tail[i : i+1]
 		if s == left {
@@ -163,27 +208,42 @@ func (e *expression) parse() {
 		buf.WriteString(s)
 		if prev == 0 && cur == 0 {
 			if s == " " {
-				arr = append(arr, buf.String())
+				filename := strings.TrimSpace(buf.String())
+				//arr = append(arr, filename)
+				arr2 = append(arr2, set{
+					kind: setKindFile,
+					file: filesMap[filename].arr,
+				})
 				buf.Reset()
 			}
 		}
 		if prev == 1 && cur == 0 {
-			arr = append(arr, buf.String())
+			expr := strings.TrimSpace(buf.String())
+			//arr = append(arr, expr)
+			arr2 = append(arr2, set{
+				kind: setKindExpr,
+				expression: expression{
+					raw: expr,
+				},
+			})
 			buf.Reset()
 		}
 		prev = cur
 	}
-	fmt.Printf("arr: %v\n", arr)
+	//fmt.Printf("arr: %v\n", arr)
+	fmt.Printf("arr2: %v\n", arr2)
+	e.sets = arr2
+
+	//// parse sub-expressions recursively
+	//for _,st :=range e.sets{
+	//
+	//}
 
 	//switch head {
 	//case operatorKindSum:
 	//	e.operator=head
 	//}
 
-	////parts:=[]string{}
-	//// todo ...
-	//parts:=strings.Split(e.raw, " ")
-	//e.operator=parts[0]
 	//for _, part :=range parts[1:]{
 	//	e.sets=append(e.sets, set{
 	//		kind:       setKindExpr,
