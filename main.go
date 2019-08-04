@@ -37,13 +37,21 @@ var (
 func main() {
 	files, err := getFiles()
 	util.Die(err)
-	fmt.Printf(">> files: %v\n", files)
+	fmt.Printf(">> files: %v\n\n", files)
 
 	task1 := expression{
+		//raw: `[ INT a.txt b.txt ]`,
+		//raw: `[ INT b.txt c.txt ]`,
+		//raw: `[ INT c.txt b.txt ]`,
+		//raw: `[ INT a.txt b.txt c.txt ]`,
+		//raw: `[ DIF a.txt b.txt ]`,
+		//raw: `[ DIF b.txt a.txt ]`,
+		//raw: `[ DIF a.txt b.txt c.txt ]`,
 		//raw: `[ SUM a.txt b.txt c.txt ]`,
 		//raw: `[ SUM a.txt  [ SUM a.txt b.txt ] b.txt ]`,
-		raw: `[ SUM c.txt  [ INT a.txt b.txt c.txt ] ]`,
-		//	//raw: `[ SUM [ DIF a.txt b.txt c.txt ] [ INT b.txt c.txt ] ]`,
+		//raw: `[ SUM c.txt  [ INT a.txt b.txt c.txt ] ]`,
+		//raw: `[ SUM [ DIF a.txt b.txt ] [ INT b.txt c.txt ] ]`,
+		raw: `[ SUM [ DIF a.txt b.txt c.txt ] [ INT b.txt c.txt ] ]`, // 1 + 3,4 = 1,3,4
 		//	raw: `[ SUM [ DIF a.txt b.txt c.txt ] a.txt b.txt [ INT b.txt c.txt ] c.txt ]`,
 		//	//raw: `[ SUM [ DIF a.txt [ INT b.txt c.txt ] b.txt ] c.txt ]`,
 		//	//raw: `[ SUM [ DIF a.txt b.txt ] c.txt ]`,
@@ -58,7 +66,7 @@ func getFiles() ([]file, error) {
 	files := []file{}
 	rootDir, _ := os.Getwd()
 	filesDir := filepath.Join(rootDir, "files")
-	fmt.Printf(">> filesDir: %v\n", filesDir)
+	//fmt.Printf(">> filesDir: %v\n", filesDir)
 
 	fileInfo, err := ioutil.ReadDir(filesDir)
 	if err != nil {
@@ -154,8 +162,8 @@ func (e *expression) calcSum() {
 }
 
 func (e *expression) calcIntersection() {
-	// evaluate all sets
-	var resultSet []int // store the first set to compare the others against it
+	// store the first set to compare the others against it
+	var resultSet []int
 	m := map[int]struct{}{}
 	for _, set := range e.sets {
 		if set.kind == setKindFile {
@@ -171,7 +179,7 @@ func (e *expression) calcIntersection() {
 	}
 	// calculate intersection pair-wise
 	for i, set := range e.sets {
-		if i > 1 {
+		if i > 0 {
 			if set.kind == setKindFile {
 				resultSet = calcIntersection0(resultSet, set.file)
 			} else if set.kind == setKindExpr {
@@ -190,11 +198,8 @@ func (e *expression) calcIntersection() {
 
 func calcIntersection0(set1 []int, set2 []int) []int {
 	arr := []int{}
-	m := map[int]struct{}{}
+	m := toMap(set1)
 	resMap := map[int]struct{}{}
-	for _, k := range set1 {
-		m[k] = struct{}{}
-	}
 	for _, k := range set2 {
 		if _, ok := m[k]; ok {
 			resMap[k] = struct{}{}
@@ -206,26 +211,45 @@ func calcIntersection0(set1 []int, set2 []int) []int {
 	return arr
 }
 
+// diff = sum of all except first DISJOIN first
 func (e *expression) calcDiff() {
+	// store the first set to compare the others against it
+	var firstSet []int
+	set := e.sets[0]
+	if set.kind == setKindFile {
+		firstSet = set.file
+	} else if set.kind == setKindExpr {
+		set.expression.evaluate()
+		firstSet = set.expression.output
+	}
+	// sum of all sets except first one
+	newExpr := e
+	newExpr.operator = operatorKindSum
+	//newExpr.sets=e.sets[1:]
+	b := append(e.sets[:0:0], e.sets...)
+	newExpr.sets = b[1:]
+	newExpr.calcSum()
+	sumSet := newExpr.output
+
+	resultSet := calcDiff0(sumSet, firstSet)
+
+	sort.Ints(resultSet)
+	e.output = resultSet
+}
+
+func calcDiff0(set1 []int, set2 []int) []int {
 	arr := []int{}
-	m := map[int]struct{}{}
-	for _, set := range e.sets {
-		if set.kind == setKindFile {
-			for _, i := range set.file {
-				m[i] = struct{}{}
-			}
-		} else if set.kind == setKindExpr {
-			set.expression.evaluate()
-			for _, i := range set.expression.output {
-				m[i] = struct{}{}
-			}
+	m := toMap(set1)
+	resMap := map[int]struct{}{}
+	for _, k := range set2 {
+		if _, ok := m[k]; !ok {
+			resMap[k] = struct{}{}
 		}
 	}
-	for k, _ := range m {
+	for k, _ := range resMap {
 		arr = append(arr, k)
 	}
-	sort.Ints(arr)
-	e.output = arr
+	return arr
 }
 
 func (e *expression) parse() {
@@ -237,15 +261,13 @@ func (e *expression) parse() {
 	gr := re.FindStringSubmatch(raw)
 	head := gr[2]
 	tail := gr[3]
-	fmt.Printf("tail: '%v'\n", tail)
 	e.operator = head
 
-	// parse the tail
+	// parse the expressions
 	cur, prev := 0, 0
 	left, right := "[", "]"
 	buf := bytes.Buffer{}
-	//arr := []string{}
-	arr2 := []set{}
+	arr := []set{}
 	for i := 0; i < len(tail); i++ {
 		s := tail[i : i+1]
 		if s == left {
@@ -258,8 +280,7 @@ func (e *expression) parse() {
 		if prev == 0 && cur == 0 {
 			if s == " " {
 				filename := strings.TrimSpace(buf.String())
-				//arr = append(arr, filename)
-				arr2 = append(arr2, set{
+				arr = append(arr, set{
 					kind: setKindFile,
 					file: filesMap[filename].arr,
 				})
@@ -268,8 +289,7 @@ func (e *expression) parse() {
 		}
 		if prev == 1 && cur == 0 {
 			expr := strings.TrimSpace(buf.String())
-			//arr = append(arr, expr)
-			arr2 = append(arr2, set{
+			arr = append(arr, set{
 				kind: setKindExpr,
 				expression: expression{
 					raw: expr,
@@ -279,26 +299,13 @@ func (e *expression) parse() {
 		}
 		prev = cur
 	}
-	//fmt.Printf("arr: %v\n", arr)
-	fmt.Printf("arr2: %v\n", arr2)
-	e.sets = arr2
+	e.sets = arr
+}
 
-	//// parse sub-expressions recursively
-	//for _,st :=range e.sets{
-	//
-	//}
-
-	//switch head {
-	//case operatorKindSum:
-	//	e.operator=head
-	//}
-
-	//for _, part :=range parts[1:]{
-	//	e.sets=append(e.sets, set{
-	//		kind:       setKindExpr,
-	//		expression: expression{
-	//			raw: part,
-	//		},
-	//	})
-	//}
+func toMap(set []int) map[int]struct{} {
+	m := map[int]struct{}{}
+	for _, k := range set {
+		m[k] = struct{}{}
+	}
+	return m
 }
