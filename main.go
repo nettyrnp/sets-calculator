@@ -119,14 +119,15 @@ type file struct {
 }
 
 type expression struct {
-	raw      string
-	operator string
-	sets     []set
-	output   []int
+	raw         string
+	operator    string
+	sets        []set
+	output      []int
+	isEvaluated bool
 }
 
 func (e *expression) evaluate() {
-	if e.operator == "" && e.sets == nil {
+	if !e.isEvaluated {
 		e.parse()
 	}
 	switch e.operator {
@@ -148,7 +149,9 @@ func (e *expression) calcSum() {
 				m[i] = struct{}{}
 			}
 		} else if set.kind == setKindExpr {
-			set.expression.evaluate()
+			if !set.expression.isEvaluated {
+				set.expression.evaluate()
+			}
 			for _, i := range set.expression.output {
 				m[i] = struct{}{}
 			}
@@ -171,7 +174,9 @@ func (e *expression) calcIntersection() {
 				resultSet = set.file
 			}
 		} else if set.kind == setKindExpr {
-			set.expression.evaluate()
+			if !set.expression.isEvaluated {
+				set.expression.evaluate()
+			}
 			if resultSet == nil {
 				resultSet = set.expression.output
 			}
@@ -183,7 +188,9 @@ func (e *expression) calcIntersection() {
 			if set.kind == setKindFile {
 				resultSet = calcIntersection0(resultSet, set.file)
 			} else if set.kind == setKindExpr {
-				set.expression.evaluate()
+				if !set.expression.isEvaluated {
+					set.expression.evaluate()
+				}
 				resultSet = calcIntersection0(resultSet, set.expression.output)
 			}
 		}
@@ -219,13 +226,15 @@ func (e *expression) calcDiff() {
 	if set.kind == setKindFile {
 		firstSet = set.file
 	} else if set.kind == setKindExpr {
-		set.expression.evaluate()
+		if !set.expression.isEvaluated {
+			set.expression.evaluate()
+		}
 		firstSet = set.expression.output
 	}
-	// sum of all sets except first one
+
+	// store the sum of all sets except first one
 	newExpr := e
 	newExpr.operator = operatorKindSum
-	//newExpr.sets=e.sets[1:]
 	b := append(e.sets[:0:0], e.sets...)
 	newExpr.sets = b[1:]
 	newExpr.calcSum()
@@ -253,7 +262,7 @@ func calcDiff0(set1 []int, set2 []int) []int {
 }
 
 func (e *expression) parse() {
-	// parse the operator
+	// extract the operator
 	raw := e.raw
 	if !re.MatchString(raw) {
 		logger.Fatalf("%v is not a valid expression", raw)
@@ -263,7 +272,7 @@ func (e *expression) parse() {
 	tail := gr[3]
 	e.operator = head
 
-	// parse the expressions
+	// extract the expressions
 	cur, prev := 0, 0
 	left, right := "[", "]"
 	buf := bytes.Buffer{}
