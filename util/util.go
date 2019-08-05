@@ -23,3 +23,11 @@ func ReadFile(path string) (string, error) {
 	}
 	return string(b), nil
 }
+
+func ToMap(set []int) map[int]struct{} {
+	m := map[int]struct{}{}
+	for _, k := range set {
+		m[k] = struct{}{}
+	}
+	return m
+}
