@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/nettyrnp/sets-calculator/util"
 	"sort"
 	"strings"
@@ -26,6 +27,16 @@ type expression struct {
 	sets        []set
 	output      []int
 	isEvaluated bool
+}
+
+func (e *expression) printResults() {
+	if !e.isEvaluated {
+		fmt.Printf("Task is not evaluated! Method 'evaluate()' should be called before printing results.\n")
+		return
+	}
+	for _, v := range e.output {
+		fmt.Printf("%v\n", v)
+	}
 }
 
 func (e *expression) evaluate() {
